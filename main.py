@@ -1,58 +1,52 @@
-from fastapi import FastAPI, Form, Request, Depends
+import os
+from fastapi import FastAPI, Depends, HTTPException, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
+from fastapi import Request
 from sqlalchemy.orm import Session
 from cryptography.fernet import Fernet
-import models
+
+# Import your local files
+import models, schemas, database
 from database import engine, get_db
 
-# 1. Initialize Database Tables
+# Create the database tables
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
-
-# 2. Static & Template Config
-app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# 3. Encryption Setup (Using your generated key)
-KEY = b'8n4KPEpMzuKwMKXusRQTb4byeXERYs6vae2mYZuKbcY=' 
-cipher = Fernet(KEY)
+# --- ENCRYPTION SETUP ---
+# It looks for the key in Render's settings. 
+# If it can't find it, it uses a default (for your local laptop testing).
+SECRET_KEY = os.getenv("ENCRYPTION_KEY", "b'7_X9_Zp8V_X88R5_m_Jk1cK5_Stores_Example='")
+fernet = Fernet(SECRET_KEY.encode() if isinstance(SECRET_KEY, str) else SECRET_KEY)
 
-# 4. View Passwords
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request, db: Session = Depends(get_db)):
-    db_passwords = db.query(models.PasswordEntry).all()
-    
-    display_list = []
-    for entry in db_passwords:
+def index(request: Request, db: Session = Depends(get_db)):
+    passwords = db.query(models.Password).all()
+    # Decrypt passwords for display
+    for p in passwords:
         try:
-            decrypted_pw = cipher.decrypt(entry.encrypted_password.encode()).decode()
-            display_list.append({
-                "id": entry.id,
-                "service": entry.service_name,
-                "pw": decrypted_pw
-            })
+            p.password_text = fernet.decrypt(p.password_text.encode()).decode()
         except:
-            continue
-            
-    return templates.TemplateResponse("index.html", {"request": request, "passwords": display_list})
+            p.password_text = "Encryption Error"
+    return templates.TemplateResponse("index.html", {"request": request, "passwords": passwords})
 
-# 5. Save Password
-@app.post("/save")
-async def save(username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
-    encrypted_pw = cipher.encrypt(password.encode()).decode()
-    new_entry = models.PasswordEntry(service_name=username, encrypted_password=encrypted_pw)
-    db.add(new_entry)
+@app.post("/add")
+def add_password(service: str = Form(...), password_text: str = Form(...), db: Session = Depends(get_db)):
+    # Encrypt the password before saving to PostgreSQL
+    encrypted_password = fernet.encrypt(password_text.encode()).decode()
+    new_password = models.Password(service=service, password_text=encrypted_password)
+    db.add(new_password)
     db.commit()
     return RedirectResponse(url="/", status_code=303)
 
-# 6. Delete Password
-@app.post("/delete/{entry_id}")
-async def delete_entry(entry_id: int, db: Session = Depends(get_db)):
-    entry = db.query(models.PasswordEntry).filter(models.PasswordEntry.id == entry_id).first()
-    if entry:
-        db.delete(entry)
+# Add a delete route for your friends/clients to use
+@app.post("/delete/{password_id}")
+def delete_password(password_id: int, db: Session = Depends(get_db)):
+    db_password = db.query(models.Password).filter(models.Password.id == password_id).first()
+    if db_password:
+        db.delete(db_password)
         db.commit()
     return RedirectResponse(url="/", status_code=303)
