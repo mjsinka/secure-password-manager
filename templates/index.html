@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/static/style.css">
+    <title>CipherVault | Secure Manager</title>
+</head>
+<body>
+    <div class="vault-container">
+        <h2>🔒 CipherVault</h2>
+        <form action="/save" method="post">
+            <input type="text" name="username" placeholder="Website or Service Name" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit">Encrypt & Lock</button>
+        </form>
+
+        <div class="password-list">
+            <h3>Stored Credentials</h3>
+            {% for item in passwords %}
+            <div class="entry">
+                <strong>Service:</strong> {{ item.user }}<br>
+                <strong>Password:</strong> <span style="color: #4ecca3;">{{ item.pw }}</span>
+            </div>
+            {% else %}
+            <p style="text-align: center; color: #888;">No passwords stored yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>
